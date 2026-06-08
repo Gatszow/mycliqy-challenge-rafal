@@ -51,6 +51,21 @@ export function QueueCard({
   const [draft, setDraft] = useState(item.draft_reply)
   const pending = item.status === 'pending'
 
+  function cancelEdit() {
+    setDraft(item.draft_reply)
+    onCancelEdit()
+  }
+
+  function handleEditorKey(e: React.KeyboardEvent) {
+    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+      e.preventDefault()
+      onSaveReply(draft)
+    } else if (e.key === 'Escape') {
+      e.preventDefault()
+      cancelEdit()
+    }
+  }
+
   return (
     <article
       className={`rounded-xl border p-5 transition-all ${pending ? '' : 'opacity-50'} ${BAND_ACCENT[confidenceBand(item.confidence)]} ${
@@ -90,6 +105,7 @@ export function QueueCard({
           <textarea
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={handleEditorKey}
             rows={4}
             autoFocus
             className="w-full mt-1 rounded-lg bg-zinc-950 border border-zinc-700 px-3 py-2 text-sm text-zinc-200 focus:outline-none focus:border-zinc-500 resize-y"
@@ -100,7 +116,7 @@ export function QueueCard({
       </div>
 
       {pending && isEditing && (
-        <div className="flex gap-2">
+        <div className="flex items-center gap-2">
           <button
             onClick={() => onSaveReply(draft)}
             className="px-3 py-1.5 rounded-lg text-xs font-medium bg-white text-black hover:bg-zinc-200 transition-colors"
@@ -108,14 +124,12 @@ export function QueueCard({
             💾 Zapisz
           </button>
           <button
-            onClick={() => {
-              setDraft(item.draft_reply)
-              onCancelEdit()
-            }}
+            onClick={cancelEdit}
             className="px-3 py-1.5 rounded-lg text-xs font-medium bg-zinc-800 text-zinc-300 border border-zinc-700 hover:bg-zinc-700 transition-colors"
           >
             Anuluj
           </button>
+          <span className="text-xs text-zinc-600 ml-1">Ctrl+Enter zapisz · Esc anuluj</span>
         </div>
       )}
 
