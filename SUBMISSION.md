@@ -1,27 +1,27 @@
 ## Krok 3 - co zrobiłem i dlaczego
 
-Zamiast pojedynczego gadżetu zrobiłem tryb triażu oparty o pewność AI. Najpierw sprawdziłem, jak takie panele HITL projektuje się w praktyce (Mavik Labs, Cobbai, StackAI) i wyszło dość jasno, że najważniejsza jest jedna rzecz: operator ma skupiać uwagę tam, gdzie model jest najmniej pewny (double-threshold). Więc confidence u mnie to nie jest tylko liczba obok draftu. Sortuje kolejkę (najpierw priorytet, potem najniższa pewność na górze) i dzieli karty na trzy pasma: poniżej 70% leci "wymaga uwagi", powyżej 90% "AI pewny".
+Zamiast wrzucać losowy gadżet, zrobiłem kolejkę, która sama układa wiadomości według ważności. Najpierw poczytałem, jak takie panele robi się w praktyce (Mavik Labs, Cobbai, StackAI) i wyszło, że chodzi w nich o jedną rzecz: człowiek ma patrzeć tam, gdzie AI jest najmniej pewne swojej odpowiedzi. Reszta to strata jego czasu. Dlatego pewność AI (to pole confidence z danych) u mnie coś robi, a nie tylko się wyświetla: wypycha na górę to, co pilne i niepewne (wysoki priorytet, niska pewność), a karty dzieli na trzy poziomy - poniżej 70% leci "wymaga uwagi", powyżej 90% "AI pewny".
 
-Reszta to rzeczy pod tempo pracy operatora. Skróty klawiszowe (J/K do nawigacji, A/R/E na akcje, Ctrl+Enter zapis i Esc anuluj w edycji), żeby dało się przeklikać kolejkę bez sięgania po mysz. Toast "Cofnij", bo zatwierdzenie idzie prosto do klienta i trzeba móc się wycofać. Formularz, który na żywo woła /api/classify i wrzuca wynik do kolejki. No i pasek statystyk z overturn rate, czyli ile draftów operator musiał poprawić przed wysyłką - to akurat niezła miara tego, jak dobrze radzi sobie model.
+Reszta to drobiazgi, żeby operator szybciej przemielił kolejkę. Skróty z klawiatury (J/K do skakania po liście, A/R/E na zatwierdź/odrzuć/edytuj, Ctrl+Enter zapis i Esc anuluj), żeby dało się czyścić kolejkę bez ruszania myszki. Toast "Cofnij", bo jak coś zatwierdzisz, to leci prosto do klienta i trzeba móc się wycofać. Formularz, który na żywo woła /api/classify i dorzuca wynik do kolejki. No i licznik, ile odpowiedzi trzeba było poprawić przed wysłaniem - bo to akurat fajnie pokazuje, jak dobrze AI sobie radzi.
 
 ## AI - jak używałem narzędzi
 
-- Narzędzia: Claude Code (Opus). Po kolei: research, plan, implementacja, klikanie po UI w Playwright, poprawki.
+- Narzędzia: Claude Code (Opus). Po kolei: research, plan, kodzenie, klikanie po UI w Playwright, poprawki.
 
-- Prompt, który najlepiej zadziałał (wklejam dosłownie, pchnął mnie w research zamiast od razu w kod):
+- Prompt, który najlepiej zadziałał (wklejam jak leciało, popchnął mnie w research zamiast od razu w klepanie kodu):
 
   "Hmmmm, no ogólnie co myślisz dałoby najciekawszy efekt? zrób research właściwy oraz przeanalizuj dokładnie potrzeby kryjące się za takim programem, to zrobimy to porządnie"
 
-  Dzięki temu, zamiast wziąć pierwszą funkcję z brzegu z listy w README, najpierw przyjrzałem się produktowi MyCliqy i temu, czego operatorzy faktycznie potrzebują od takiej kolejki. Krok 3 wyszedł dopiero z tego.
+  Dzięki temu nie wziąłem pierwszej lepszej funkcji z listy w README, tylko najpierw obczaiłem produkt MyCliqy i to, czego ludzie faktycznie potrzebują od takiej kolejki. Krok 3 wyszedł dopiero z tego.
 
-- Gdzie AI się pomyliło i co poprawiałem ręcznie (dwa konkretne bugi, oba wyszły dopiero przy testach):
+- Gdzie AI się wyłożyło i co poprawiałem ręcznie (dwa konkretne bugi, oba wyszły dopiero przy testach):
 
-  1. Build padał. Klient new OpenAI({...}) siedział na poziomie modułu w route.ts, a Next przy next build odpala moduł podczas zbierania danych stron i leciał błąd "OPENAI_API_KEY is missing". Przeniosłem tworzenie klienta do środka handlera, po sprawdzeniu klucza. Wyszło na npm run build.
+  1. Build się sypał. Klient new OpenAI({...}) siedział na górze pliku route.ts, a Next przy buildzie odpala ten plik i wyrzucał błąd "OPENAI_API_KEY is missing". Przeniosłem tworzenie klienta do środka funkcji, po sprawdzeniu klucza. Złapało się na npm run build.
 
-  2. Klawisz E wchodził do pola edycji. Po wejściu w edycję przez E w polu pojawiało się "ePrzepraszamy...". React montuje textarea z autoFocus jeszcze w trakcie keydown, więc kolejny input wpisywał tę literę. Dodałem e.preventDefault() na skrótach. To akurat zobaczyłem dopiero na screenshocie z Playwright, z samego kodu bym przeoczył.
+  2. Klawisz E wskakiwał do pola edycji. Po wejściu w edycję przez E w polu robiło się "ePrzepraszamy...". React montuje to pole z autofocusem jeszcze w trakcie wciśnięcia klawisza, więc litera wpadała do środka. Dorzuciłem e.preventDefault() na skrótach. Tego akurat nie widać w kodzie, wyłapałem dopiero na screenie z Playwright.
 
-- Udział AI w kodzie: jakieś 85% generowane, 15% pisane albo poprawiane ręcznie (kierunek researchu, decyzje o Kroku 3, oba fixy, dostrojenie progów i promptu klasyfikatora).
+- Ile z tego to AI: jakieś 85% generowane, 15% pisane albo poprawiane ręcznie (kierunek researchu, decyzje o Kroku 3, oba fixy, dłubanie przy progach i promptcie).
 
 ## Weryfikacja
 
-Przetestowałem całość end-to-end. Nie kupowałem kredytów OpenAI tylko na to zadanie, więc puściłem to przez darmowy endpoint Gemini, który jest kompatybilny z OpenAI (ten sam SDK, tylko inny baseURL). Kod i tak celuje w gpt-4o-mini zgodnie z wymogiem, request wygląda identycznie. Sprawdziłem 4 kategorie plus przypadki brzegowe: wiadomość dwuznaczną (zamówienie i reklamacja naraz, bierze reklamację/high), mieszany PL/EN (odpowiada po polsku), bardzo krótką i bardzo długą. Do tego walidacja 400 (puste pola, zły JSON), tsc i next build na zielono oraz UI w przeglądarce (triaż, skróty, edycja, undo, mobile, stany puste i błędu). Jak model zwróci coś nie tak, endpoint oddaje czysty błąd zamiast się wywalać.
+Sprawdziłem wszystko od początku do końca. Nie chciałem kupować kredytów OpenAI na jedno zadanie, więc puściłem to przez darmowe Gemini, które gada tym samym protokołem co OpenAI (ten sam SDK, tylko inny adres). Kod i tak jest pod gpt-4o-mini zgodnie z wymogiem, request wygląda tak samo. Przeszły 4 kategorie plus trudniejsze przypadki: wiadomość i o zamówieniu, i o reklamacji naraz (bierze reklamację/high), miks polskiego z angielskim (i tak odpowiada po polsku), bardzo krótka i bardzo długa. Do tego sprawdzanie pustych pól i złego JSON-a (zwraca 400), tsc i build na zielono, no i samo UI w przeglądarce (sortowanie, skróty, edycja, cofanie, mobilka, puste ekrany i błędy). Jak model zwróci coś nie tak, to wychodzi czysty błąd, a nie wywalenie całej strony.
