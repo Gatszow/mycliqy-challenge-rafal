@@ -1,13 +1,14 @@
 'use client'
 
-import { useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { QueueItem, MessageStatus, MessageCategory } from '@/types'
+import { CATEGORIES } from '@/lib/ui'
+import { computeStats, sortForTriage } from '@/lib/queue'
+import { StatsBar } from '@/components/StatsBar'
+import { AddMessageForm } from '@/components/AddMessageForm'
+import { QueueCard } from '@/components/QueueCard'
+import { Toast } from '@/components/Toast'
 
-// ────────────────────────────────────────────────────────────
-// Dane przykładowe — pozwalają zobaczyć jak wygląda gotowy UI
-// zanim zaimplementujesz endpoint /api/classify.
-// Możesz je zastąpić lub rozszerzyć według potrzeb.
-// ────────────────────────────────────────────────────────────
 const SEED_ITEMS: QueueItem[] = [
   {
     id: '1',
@@ -29,7 +30,7 @@ const SEED_ITEMS: QueueItem[] = [
     priority: 'high',
     draft_reply:
       'Przepraszamy za niedogodności. Proszę o numer zamówienia — sprawdzimy status wysyłki i wrócimy do Pani w ciągu 2 godzin.',
-    confidence: 0.91,
+    confidence: 0.62,
     status: 'pending',
     created_at: new Date(Date.now() - 120_000).toISOString(),
   },
@@ -46,76 +47,152 @@ const SEED_ITEMS: QueueItem[] = [
   },
 ]
 
-// ────────────────────────────────────────────────────────────
-// Kolory etykiet — możesz dostosować
-// ────────────────────────────────────────────────────────────
-const CATEGORY_STYLES: Record<MessageCategory, string> = {
-  zamówienie: 'bg-emerald-900/40 text-emerald-400 border border-emerald-700/40',
-  pytanie: 'bg-blue-900/40 text-blue-400 border border-blue-700/40',
-  reklamacja: 'bg-red-900/40 text-red-400 border border-red-700/40',
-  spam: 'bg-zinc-800 text-zinc-500 border border-zinc-700',
+interface LastAction {
+  id: string
+  prevStatus: MessageStatus
 }
-
-const PRIORITY_DOT: Record<string, string> = {
-  high: 'bg-red-400',
-  medium: 'bg-amber-400',
-  low: 'bg-zinc-500',
-}
-
-// ────────────────────────────────────────────────────────────
-// QueuePage — główny komponent
-//
-// TODO (krok 2): Zaimplementuj kolejkę weryfikacji.
-//
-// Minimalne wymagania:
-//   ✅ Lista wiadomości z oryginałem + draft AI
-//   ✅ Przyciski: Zatwierdź / Edytuj / Odrzuć
-//   ✅ Zmiana statusu (pending → approved / rejected)
-//   ✅ Filtrowanie po kategorii
-//
-// SEED_ITEMS powyżej pokazują oczekiwaną strukturę danych.
-// Możesz też podłączyć formularz który wywołuje POST /api/classify
-// i dodaje wynik do kolejki — to dobry punkt na własną funkcję (krok 3).
-// ────────────────────────────────────────────────────────────
 
 export default function QueuePage() {
   const [items, setItems] = useState<QueueItem[]>(SEED_ITEMS)
   const [filter, setFilter] = useState<MessageCategory | 'all'>('all')
+  const [focusedId, setFocusedId] = useState<string | null>(null)
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [editedIds, setEditedIds] = useState<Set<string>>(new Set())
+  const [lastAction, setLastAction] = useState<LastAction | null>(null)
+  const [toast, setToast] = useState<string | null>(null)
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  // TODO: Zaimplementuj logikę akcji
-  function handleAction(_id: string, _action: MessageStatus) {
-    // Wskazówka: użyj setItems z map() — nie mutuj tablicy bezpośrednio
-  }
+  const visible = useMemo(
+    () => sortForTriage(filter === 'all' ? items : items.filter((i) => i.category === filter)),
+    [items, filter],
+  )
+  const visiblePending = useMemo(() => visible.filter((i) => i.status === 'pending'), [visible])
+  const stats = useMemo(() => computeStats(items, editedIds), [items, editedIds])
 
-  // TODO: Zaimplementuj edycję draft_reply
-  function handleEditReply(_id: string, _newReply: string) {
-    // Wskazówka: j.w.
-  }
+  // Focus zawsze wskazuje widoczny pending — przelicz gdy filtr/akcja go usunie.
+  useEffect(() => {
+    if (visiblePending.length === 0) {
+      if (focusedId !== null) setFocusedId(null)
+      return
+    }
+    if (!visiblePending.some((i) => i.id === focusedId)) {
+      setFocusedId(visiblePending[0].id)
+    }
+  }, [visiblePending, focusedId])
 
-  const visible = filter === 'all' ? items : items.filter((i) => i.category === filter)
-  const pending = items.filter((i) => i.status === 'pending').length
+  const clearToastTimer = useCallback(() => {
+    if (toastTimer.current) clearTimeout(toastTimer.current)
+    toastTimer.current = null
+  }, [])
+
+  const showToast = useCallback(
+    (message: string) => {
+      clearToastTimer()
+      setToast(message)
+      toastTimer.current = setTimeout(() => setToast(null), 5000)
+    },
+    [clearToastTimer],
+  )
+
+  useEffect(() => clearToastTimer, [clearToastTimer])
+
+  const handleAction = useCallback(
+    (id: string, status: 'approved' | 'rejected') => {
+      const target = items.find((i) => i.id === id)
+      if (!target || target.status !== 'pending') return
+      const idx = visiblePending.findIndex((i) => i.id === id)
+      const next = visiblePending[idx + 1] ?? visiblePending[idx - 1] ?? null
+      setLastAction({ id, prevStatus: target.status })
+      setItems((prev) => prev.map((i) => (i.id === id ? { ...i, status } : i)))
+      if (editingId === id) setEditingId(null)
+      setFocusedId(next?.id ?? null)
+      showToast(status === 'approved' ? 'Zatwierdzono' : 'Odrzucono')
+    },
+    [items, visiblePending, editingId, showToast],
+  )
+
+  const handleUndo = useCallback(() => {
+    if (!lastAction) return
+    setItems((prev) => prev.map((i) => (i.id === lastAction.id ? { ...i, status: lastAction.prevStatus } : i)))
+    setFocusedId(lastAction.id)
+    setLastAction(null)
+    clearToastTimer()
+    setToast(null)
+  }, [lastAction, clearToastTimer])
+
+  const handleSaveReply = useCallback((id: string, reply: string) => {
+    setItems((prev) => prev.map((i) => (i.id === id ? { ...i, draft_reply: reply } : i)))
+    setEditedIds((prev) => new Set(prev).add(id))
+    setEditingId(null)
+  }, [])
+
+  const handleAdd = useCallback((item: QueueItem) => {
+    setItems((prev) => [item, ...prev])
+    setFocusedId(item.id)
+  }, [])
+
+  // Skróty klawiszowe — pomijane podczas edycji i pisania w polach tekstowych.
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      const tag = (e.target as HTMLElement)?.tagName
+      if (editingId !== null || tag === 'INPUT' || tag === 'TEXTAREA') return
+      if (visiblePending.length === 0) return
+      const idx = visiblePending.findIndex((i) => i.id === focusedId)
+      const cur = idx >= 0 ? idx : 0
+      switch (e.key.toLowerCase()) {
+        case 'j':
+          e.preventDefault()
+          setFocusedId(visiblePending[Math.min(cur + 1, visiblePending.length - 1)].id)
+          break
+        case 'k':
+          e.preventDefault()
+          setFocusedId(visiblePending[Math.max(cur - 1, 0)].id)
+          break
+        case 'a':
+          if (focusedId) {
+            e.preventDefault()
+            handleAction(focusedId, 'approved')
+          }
+          break
+        case 'r':
+          if (focusedId) {
+            e.preventDefault()
+            handleAction(focusedId, 'rejected')
+          }
+          break
+        case 'e':
+          if (focusedId) {
+            e.preventDefault()
+            setEditingId(focusedId)
+          }
+          break
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [visiblePending, focusedId, editingId, handleAction])
 
   return (
     <main className="min-h-screen p-8 max-w-4xl mx-auto">
-      {/* ── Header ─────────────────────────── */}
       <div className="mb-8">
         <p className="text-xs uppercase tracking-widest text-zinc-500 mb-1">Cliqy Studio</p>
         <h1 className="text-2xl font-bold text-zinc-100">Panel weryfikacji</h1>
         <p className="text-zinc-400 mt-1 text-sm">
-          {pending} oczekujących · {items.length} łącznie
+          {stats.pending} oczekujących · {items.length} łącznie
+          <span className="text-zinc-600"> · skróty: J/K nawigacja, A zatwierdź, R odrzuć, E edytuj</span>
         </p>
       </div>
 
-      {/* ── Filtr kategorii ────────────────── */}
+      <StatsBar stats={stats} />
+      <AddMessageForm defaultCompany={SEED_ITEMS[0].company} onAdd={handleAdd} />
+
       <div className="flex gap-2 mb-6 flex-wrap">
-        {(['all', 'zamówienie', 'pytanie', 'reklamacja', 'spam'] as const).map((cat) => (
+        {(['all', ...CATEGORIES] as const).map((cat) => (
           <button
             key={cat}
             onClick={() => setFilter(cat)}
             className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
-              filter === cat
-                ? 'bg-white text-black'
-                : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700'
+              filter === cat ? 'bg-white text-black' : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700'
             }`}
           >
             {cat === 'all' ? 'Wszystkie' : cat}
@@ -123,76 +200,27 @@ export default function QueuePage() {
         ))}
       </div>
 
-      {/* ── Lista elementów ────────────────── */}
       <div className="flex flex-col gap-4">
         {visible.length === 0 && (
           <p className="text-zinc-500 text-sm py-12 text-center">Brak elementów w tej kategorii.</p>
         )}
 
         {visible.map((item) => (
-          <article
+          <QueueCard
             key={item.id}
-            className={`rounded-xl border p-5 transition-opacity ${
-              item.status !== 'pending' ? 'opacity-50' : ''
-            }`}
-            style={{ background: 'var(--card)', borderColor: 'var(--border)' }}
-          >
-            {/* Nagłówek karty */}
-            <div className="flex items-start justify-between gap-4 mb-3">
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${CATEGORY_STYLES[item.category]}`}>
-                  {item.category}
-                </span>
-                <span className="flex items-center gap-1 text-xs text-zinc-500">
-                  <span className={`w-1.5 h-1.5 rounded-full ${PRIORITY_DOT[item.priority]}`} />
-                  {item.priority}
-                </span>
-                <span className="text-xs text-zinc-600">{item.company}</span>
-              </div>
-              <span className="text-xs text-zinc-600 shrink-0">
-                {new Date(item.created_at).toLocaleTimeString('pl-PL', { hour: '2-digit', minute: '2-digit' })}
-              </span>
-            </div>
-
-            {/* Wiadomość klienta */}
-            <div className="mb-3">
-              <p className="text-xs text-zinc-500 uppercase tracking-wider mb-1">Wiadomość</p>
-              <p className="text-sm text-zinc-200">{item.message}</p>
-            </div>
-
-            {/* Draft AI */}
-            <div className="mb-4 p-3 rounded-lg bg-zinc-900/60 border border-zinc-800">
-              <p className="text-xs text-zinc-500 uppercase tracking-wider mb-1">
-                Draft AI · {Math.round(item.confidence * 100)}% pewności
-              </p>
-              {/* TODO: Zamień na <textarea> z edycją */}
-              <p className="text-sm text-zinc-300">{item.draft_reply}</p>
-            </div>
-
-            {/* Akcje */}
-            {item.status === 'pending' && (
-              <div className="flex gap-2">
-                {/* TODO: Podłącz do handleAction */}
-                <button className="px-3 py-1.5 rounded-lg text-xs font-medium bg-emerald-900/40 text-emerald-400 border border-emerald-700/40 hover:bg-emerald-800/50 transition-colors">
-                  ✅ Zatwierdź
-                </button>
-                <button className="px-3 py-1.5 rounded-lg text-xs font-medium bg-zinc-800 text-zinc-300 border border-zinc-700 hover:bg-zinc-700 transition-colors">
-                  ✏️ Edytuj
-                </button>
-                <button className="px-3 py-1.5 rounded-lg text-xs font-medium bg-red-900/40 text-red-400 border border-red-700/40 hover:bg-red-800/50 transition-colors">
-                  ❌ Odrzuć
-                </button>
-              </div>
-            )}
-
-            {item.status !== 'pending' && (
-              <p className="text-xs text-zinc-600 italic">
-                {item.status === 'approved' ? '✅ Zatwierdzone' : '❌ Odrzucone'}
-              </p>
-            )}
-          </article>
+            item={item}
+            focused={item.id === focusedId}
+            isEditing={item.id === editingId}
+            onApprove={() => handleAction(item.id, 'approved')}
+            onReject={() => handleAction(item.id, 'rejected')}
+            onStartEdit={() => setEditingId(item.id)}
+            onSaveReply={(reply) => handleSaveReply(item.id, reply)}
+            onCancelEdit={() => setEditingId(null)}
+          />
         ))}
       </div>
+
+      {toast && lastAction && <Toast message={toast} onUndo={handleUndo} onDismiss={() => setToast(null)} />}
     </main>
   )
 }
