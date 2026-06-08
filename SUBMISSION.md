@@ -19,3 +19,7 @@ Zbudowałem **tryb triażu sterowany pewnością AI** zamiast pojedynczego gadż
   2. **Klawisz `E` wciekał do pola edycji** — po wejściu w edycję skrótem `E` textarea pokazywała „**e**Przepraszamy…". React synchronicznie montuje `<textarea autoFocus>` jeszcze w trakcie zdarzenia `keydown`, więc następujący `input` wpisywał literę. Poprawka: `e.preventDefault()` na obsługiwanych skrótach. Wyłapane wizualnie przez screenshot w Playwright — czysto logicznie bym to przeoczył.
 
 - **Szacowany udział AI w kodzie:** ~85% wygenerowane, ~15% napisane/poprawione ręcznie (kierunek researchu, decyzje produktowe o Kroku 3, oba powyższe fixy, dostrojenie progów i promptu klasyfikatora).
+
+## Weryfikacja
+
+Cały przepływ przetestowany end-to-end (przez darmowy endpoint Gemini kompatybilny z OpenAI — żeby nie kupować kredytów; kod celuje w `gpt-4o-mini` zgodnie z wymogiem). Sprawdzone: 4 kategorie + przypadki brzegowe (dwuznaczne `zamówienie+reklamacja` → `reklamacja/high`, mieszany PL/EN → odpowiedź po polsku, bardzo krótka/długa wiadomość), walidacja `400` (puste pola, zły JSON), `tsc --noEmit` i `next build` bez błędów, oraz UI w przeglądarce (triaż, skróty klawiszowe, edycja, undo, responsywność, stany puste/błędu). Endpoint przy błędnej odpowiedzi modelu zwraca czysty błąd zamiast się wywalić.
