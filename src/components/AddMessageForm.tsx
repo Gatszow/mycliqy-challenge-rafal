@@ -55,14 +55,22 @@ export function AddMessageForm({ defaultCompany, onAdd }: AddMessageFormProps) {
       <p className="text-xs uppercase tracking-wider text-zinc-500 mb-3">Dodaj wiadomość → klasyfikacja AI</p>
       <input
         value={company}
-        onChange={(e) => setCompany(e.target.value)}
+        onChange={(e) => {
+          setCompany(e.target.value)
+          if (error) setError(null)
+        }}
         placeholder="Nazwa firmy"
+        aria-label="Nazwa firmy"
         className="w-full mb-2 rounded-lg bg-zinc-900/60 border border-zinc-800 px-3 py-2 text-sm text-zinc-200 placeholder-zinc-600 focus:outline-none focus:border-zinc-600"
       />
       <textarea
         value={message}
-        onChange={(e) => setMessage(e.target.value)}
+        onChange={(e) => {
+          setMessage(e.target.value)
+          if (error) setError(null)
+        }}
         placeholder="Wklej wiadomość od klienta…"
+        aria-label="Wiadomość od klienta"
         rows={3}
         className="w-full rounded-lg bg-zinc-900/60 border border-zinc-800 px-3 py-2 text-sm text-zinc-200 placeholder-zinc-600 focus:outline-none focus:border-zinc-600 resize-y"
       />

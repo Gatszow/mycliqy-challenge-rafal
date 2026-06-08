@@ -200,6 +200,12 @@ export default function QueuePage() {
         ))}
       </div>
 
+      {stats.pending === 0 && items.length > 0 && (
+        <div className="mb-4 rounded-xl border border-emerald-700/40 bg-emerald-900/20 p-4 text-center text-sm text-emerald-400">
+          ✓ Wszystko obsłużone — brak wiadomości oczekujących na weryfikację.
+        </div>
+      )}
+
       <div className="flex flex-col gap-4">
         {visible.length === 0 && (
           <p className="text-zinc-500 text-sm py-12 text-center">Brak elementów w tej kategorii.</p>
