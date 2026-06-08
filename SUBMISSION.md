@@ -1,25 +1,27 @@
-## Krok 3 — co zrobiłem i dlaczego
+## Krok 3 - co zrobiłem i dlaczego
 
-Zbudowałem **tryb triażu sterowany pewnością AI** zamiast pojedynczego gadżetu — bo po researchu (Mavik Labs, Cobbai, StackAI) zobaczyłem, że sercem każdego panelu HITL jest *double-threshold policy*: człowiek ma patrzeć tam, gdzie model jest najmniej pewny. Dlatego `confidence` nie jest u mnie ozdobą, tylko **sortuje kolejkę** (priorytet → najniższa pewność na górze) i dzieli karty na pasma (`<70%` = „⚠ wymaga uwagi", `>90%` = „AI pewny"). Do tego dołożyłem rzeczy, które realnie podnoszą bezpieczną przepustowość operatora: **skróty klawiszowe** (J/K nawigacja, A/R/E akcje, Ctrl+Enter zapis / Esc anuluj w edycji — cały przepływ bez odrywania rąk od klawiatury), **toast „Cofnij"** (bo zatwierdzenie = wysyłka do klienta — akcja musi być odwracalna), **formularz na żywo** wołający `/api/classify` (dowód, że endpoint działa end-to-end) oraz **pasek metryk** z *overturn rate* (% draftów poprawionych przed wysyłką — rynkowa miara jakości AI). Całość spięta jedną tezą: panel istnieje, by maksymalizować bezpieczną przepustowość operatora.
+Zamiast pojedynczego gadżetu zbudowałem tryb triażu sterowany pewnością AI. Po researchu (Mavik Labs, Cobbai, StackAI) zobaczyłem, że sercem każdego panelu HITL jest double-threshold policy: człowiek ma patrzeć tam, gdzie model jest najmniej pewny. Dlatego confidence nie jest u mnie ozdobą. Sortuje kolejkę (priorytet, a potem najniższa pewność na górze) i dzieli karty na pasma (poniżej 70% to "wymaga uwagi", powyżej 90% to "AI pewny").
 
-## AI — jak używałem narzędzi
+Do tego dołożyłem rzeczy, które realnie podnoszą przepustowość operatora. Skróty klawiszowe (J/K nawigacja, A/R/E akcje, Ctrl+Enter zapis i Esc anuluj w edycji), więc cały przepływ idzie bez odrywania rąk od klawiatury. Toast "Cofnij", bo zatwierdzenie to wysyłka do klienta i akcja musi być odwracalna. Formularz na żywo wołający /api/classify, czyli widać, że endpoint działa end-to-end. Pasek metryk z overturn rate, czyli ile draftów operator poprawił przed wysyłką (to rynkowa miara jakości AI). Wszystko pod jedną tezą: panel ma maksymalizować bezpieczną przepustowość operatora.
 
-- **Narzędzia:** Claude Code (model Opus). Cały flow: research domenowy → plan → implementacja → weryfikacja w przeglądarce (Playwright) → poprawki.
+## AI - jak używałem narzędzi
 
-- **Prompt który zadziałał najlepiej** (wklejony dosłownie — wymusił research-first zamiast skoku do kodu):
+- Narzędzia: Claude Code (model Opus). Cały flow: research domenowy, plan, implementacja, weryfikacja w przeglądarce (Playwright), poprawki.
 
-  > „Hmmmm, no ogólnie co myślisz dałoby najciekawszy efekt? zrób research właściwy oraz przeanalizuj dokładnie potrzeby kryjące się za takim programem, to zrobimy to porządnie"
+- Prompt, który zadziałał najlepiej (wklejony dosłownie, wymusił research zamiast skoku do kodu):
 
-  Efekt: zamiast losowo wybrać funkcję z listy w README, AI najpierw przeanalizowało produkt MyCliqy i przeszukało sieć pod kątem tego, *czego realnie oczekują operatorzy od kolejki HITL* — i dopiero z tego wyprowadziło Krok 3. To przesunęło projekt z „działa" na „rozumie po co to jest".
+  "Hmmmm, no ogólnie co myślisz dałoby najciekawszy efekt? zrób research właściwy oraz przeanalizuj dokładnie potrzeby kryjące się za takim programem, to zrobimy to porządnie"
 
-- **Gdzie AI się pomyliło i co poprawiłem ręcznie** (dwa realne bugi, oba złapane podczas weryfikacji, nie w teorii):
+  Efekt: zamiast losowo wybrać funkcję z listy w README, najpierw przeanalizowałem produkt MyCliqy i sprawdziłem w sieci, czego realnie oczekują operatorzy od kolejki HITL. Dopiero z tego wyszedł Krok 3.
 
-  1. **Build się wywalał** — klient `new OpenAI({...})` był tworzony na poziomie modułu w `route.ts`. Next przy `next build` zbiera dane stron i wykonuje moduł → rzucał `OPENAI_API_KEY is missing`, mimo że na runtime klucz by był. Poprawka: leniwa inicjalizacja klienta **wewnątrz** handlera, dopiero po sprawdzeniu klucza (dzięki temu guard `500` ma sens). Wyłapane przez `npm run build`.
+- Gdzie AI się pomyliło i co poprawiłem ręcznie (dwa realne bugi, oba złapane przy weryfikacji):
 
-  2. **Klawisz `E` wciekał do pola edycji** — po wejściu w edycję skrótem `E` textarea pokazywała „**e**Przepraszamy…". React synchronicznie montuje `<textarea autoFocus>` jeszcze w trakcie zdarzenia `keydown`, więc następujący `input` wpisywał literę. Poprawka: `e.preventDefault()` na obsługiwanych skrótach. Wyłapane wizualnie przez screenshot w Playwright — czysto logicznie bym to przeoczył.
+  1. Build się wywalał. Klient new OpenAI({...}) był tworzony na poziomie modułu w route.ts, a Next przy next build wykonuje moduł podczas zbierania danych stron i rzucał "OPENAI_API_KEY is missing". Poprawka: leniwa inicjalizacja klienta wewnątrz handlera, po sprawdzeniu klucza. Złapane przez npm run build.
 
-- **Szacowany udział AI w kodzie:** ~85% wygenerowane, ~15% napisane/poprawione ręcznie (kierunek researchu, decyzje produktowe o Kroku 3, oba powyższe fixy, dostrojenie progów i promptu klasyfikatora).
+  2. Klawisz E wciekał do pola edycji. Po wejściu w edycję skrótem E textarea pokazywała "ePrzepraszamy...". React montuje textarea z autoFocus jeszcze w trakcie zdarzenia keydown, więc kolejny input wpisywał literę. Poprawka: e.preventDefault() na obsługiwanych skrótach. Złapane wizualnie na screenshocie w Playwright.
+
+- Szacowany udział AI w kodzie: jakieś 85% wygenerowane, 15% napisane lub poprawione ręcznie (kierunek researchu, decyzje produktowe, oba fixy, dostrojenie progów i promptu klasyfikatora).
 
 ## Weryfikacja
 
-Cały przepływ przetestowany end-to-end (przez darmowy endpoint Gemini kompatybilny z OpenAI — żeby nie kupować kredytów; kod celuje w `gpt-4o-mini` zgodnie z wymogiem). Sprawdzone: 4 kategorie + przypadki brzegowe (dwuznaczne `zamówienie+reklamacja` → `reklamacja/high`, mieszany PL/EN → odpowiedź po polsku, bardzo krótka/długa wiadomość), walidacja `400` (puste pola, zły JSON), `tsc --noEmit` i `next build` bez błędów, oraz UI w przeglądarce (triaż, skróty klawiszowe, edycja, undo, responsywność, stany puste/błędu). Endpoint przy błędnej odpowiedzi modelu zwraca czysty błąd zamiast się wywalić.
+Cały przepływ przetestowany end-to-end. Żeby nie kupować kredytów OpenAI na jedno zadanie, puściłem to przez darmowy endpoint Gemini kompatybilny z OpenAI (ten sam SDK, inny baseURL). Kod celuje w gpt-4o-mini zgodnie z wymogiem, kształt żądania jest identyczny. Sprawdziłem 4 kategorie i przypadki brzegowe: wiadomość dwuznaczną (zamówienie plus reklamacja, klasyfikuje jako reklamację/high), mieszany PL/EN (odpowiada po polsku), bardzo krótką i bardzo długą. Do tego walidacja 400 (puste pola, zły JSON), tsc --noEmit i next build bez błędów oraz UI w przeglądarce (triaż, skróty, edycja, undo, responsywność, stany puste i błędu). Przy błędnej odpowiedzi modelu endpoint zwraca czysty błąd, nie wywala się.
